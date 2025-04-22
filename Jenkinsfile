@@ -1,17 +1,15 @@
-
 pipeline {
     agent any
 
     environment {
-        REPO_NAME = 'vote-app'
-        AWS_ACCOUNT_ID = '836684609232'
         AWS_REGION = 'ap-south-1'
-        IMAGE_TAG = "v1.${BUILD_NUMBER}"
-        ECR_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REPO_NAME}"
+        ECR_REGISTRY = '836684609232.dkr.ecr.ap-south-1.amazonaws.com'
+        ECR_REPO = 'vote-app'
+        IMAGE_TAG = "latest"
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Git Checkout') {
             steps {
                 checkout scm
             }
@@ -19,36 +17,37 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${REPO_NAME}:${IMAGE_TAG} ."
+                script {
+                    sh '''
+                    echo "🔧 Building Docker image..."
+                    docker build -t $ECR_REPO:$IMAGE_TAG .
+                    '''
+                }
             }
         }
 
         stage('Login to ECR') {
             steps {
-                sh """
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                    docker login --username AWS --password-stdin ${ECR_URI}
-                """
+                script {
+                    sh '''
+                    echo "🔐 Logging into Amazon ECR..."
+                    aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+                    '''
+                }
             }
         }
 
-        stage('Push to ECR') {
+        stage('Tag and Push Docker Image') {
             steps {
-                sh """
-                    docker tag ${REPO_NAME}:${IMAGE_TAG} ${ECR_URI}:${IMAGE_TAG}
-                    docker push ${ECR_URI}:${IMAGE_TAG}
-                """
-            }
-        }
+                script {
+                    sh '''
+                    echo "🏷️ Tagging image..."
+                    docker tag $ECR_REPO:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
 
-        stage('Deploy to ECS') {
-            steps {
-                sh """
-                    aws ecs update-service \
-                      --cluster your-cluster-name \
-                      --service your-service-name \
-                      --force-new-deployment
-                """
+                    echo "🚀 Pushing image to ECR..."
+                    docker push $ECR_REGISTRY/$ECR_REPO:$IMAGE_TAG
+                    '''
+                }
             }
         }
     }
